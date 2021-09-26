@@ -2,7 +2,7 @@
 
 PHONY : all
 
-TARGET_NAME ?= system_monitor
+TARGET_NAME ?= bin/evdriver
 
 CROSS_COMPILE ?= 
 
@@ -19,7 +19,7 @@ RANLIB	= $(CROSS_COMPILE)RANLIB
 
 CFLAGS =
 CFLAGS += -rdynamic -pipe -O2 -Wall
-CFLAGS += -I include
+CFLAGS += -I include -I event
 
 LDFLAGS = 
 LDFLAGS += -fPIC -rdynamic -shared 
@@ -36,21 +36,25 @@ MAKEFILE_BUILD := Makefile.build
 MAKEFILE_TEST_BUILD := Makefile.test.build
 export MAKEFILE_BUILD MAKEFILE_TEST_BUILD
 
-dirs := init/
+dirs := event/ init/
 dirs := ${patsubst %/,%,$(filter %/, $(dirs))}
 PHONY += $(dirs)
 $(dirs): FORCE
-	@make -f ${MAKEFILE_TEST_BUILD}  obj=$@
+	@make -f ${MAKEFILE_BUILD}  obj=$@
+
+objs := init/main.o
 
 all: $(dirs) 
-		
+	mkdir -p bin
+	$(CC) ${LDFLAGS} -o ${TARGET_NAME} ${objs} ${LIBS}
+	
 clean:	FORCE
 	@echo  ">>> clean target"
 	@rm -f *.bak *.so *.a
 	@rm -f ${TARGET_NAME}
 	@${shell for dir in `find -maxdepth 3 -type d | grep -v git| grep -v include | grep -v \.si4project`;\
 	do rm -f $${dir}/*.o $${dir}/*.bak $${dir}/*.so $${dir}/*.a $${dir}/*.dep;done}
-	@rm -fr bin/
+	@rm -fr bin/ libs/
 	@${shell cd init && for i in `find *.c`;do rm -f `echo $$i|sed 's/\.c//g' `;done }
 
 help: 

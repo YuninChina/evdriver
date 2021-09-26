@@ -1,4 +1,4 @@
 
-obj-y := evdriver.o
+obj-y := main.o
 
 

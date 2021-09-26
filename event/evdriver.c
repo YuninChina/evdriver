@@ -14,10 +14,8 @@
 #include <sys/time.h>
 #include <sys/timerfd.h>
 
+#include "evdriver.h"
 
-typedef struct evdriver_ctx_s evdriver_ctx_t;
-
-typedef void (*evdriver_callback_t)(evdriver_ctx_t *handle,void *arg);
 
 struct evdriver_ctx_s {
 	int loop;
@@ -27,40 +25,7 @@ struct evdriver_ctx_s {
 	unsigned long timeout;
 };
 
-///////////////////////////////////////////////////////////////////////////////////
-evdriver_ctx_t *evdriver_create(void);
-int evdriver_timer_add(evdriver_ctx_t *handle,evdriver_callback_t cb,void *arg,unsigned long timeout,unsigned long period);
-void evdriver_timer_stop(evdriver_ctx_t *handle);
-void evdriver_run(evdriver_ctx_t *handle);
 
-
-static void test_timeout(evdriver_ctx_t *handle,void *arg)
-{
-	printf("hello,world\n");
-	static int __cnt = 0;
-	if(__cnt++ > 10)
-	{
-		printf("timer stop(%d)...\n",__cnt);
-		evdriver_timer_stop(handle);
-	}
-}
-
-int main(int argc, char *argv[])
-{
-	int ret = -1;
-	evdriver_ctx_t *handle = NULL;
-	handle = evdriver_create();
-	assert(handle);
-	ret = evdriver_timer_add(handle,test_timeout,NULL,1000,1000);
-	assert(0 == ret);
-	evdriver_run(handle);	
-	return 0;
-}
-
-
-
-
-/**************************************************************/
 static void msec2tspec(int msec, struct timespec *ts)
 {
 	if (msec) {
@@ -107,7 +72,7 @@ int evdriver_timer_add(evdriver_ctx_t *handle,evdriver_callback_t cb,void *arg,u
 	return 0;
 }
 
-void evdriver_timer_stop(evdriver_ctx_t *handle)
+void evdriver_timer_del(evdriver_ctx_t *handle)
 {
 	epoll_ctl(handle->loop, EPOLL_CTL_DEL, handle->timerfd, NULL);
 	close(handle->timerfd);
