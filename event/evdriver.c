@@ -18,10 +18,9 @@
 
 
 struct evdriver_ctx_s {
+	struct list_head list;
+	int running;
 	int loop;
-	int timerfd;
-	evdriver_callback_t cb;
-	void *arg;
 	unsigned long timeout;
 };
 
@@ -45,6 +44,7 @@ evdriver_ctx_t *evdriver_create(void)
 	handle->loop = epoll_create1(EPOLL_CLOEXEC);
 	assert(handle->loop > 0);
 	handle->timeout = -1;
+	INIT_LIST_HEAD(&handle->list);
 	return handle;
 }
 
@@ -53,30 +53,52 @@ int evdriver_timer_add(evdriver_ctx_t *handle,evdriver_callback_t cb,void *arg,u
 	assert(handle);
 	struct itimerspec time;
 	int ret;
-	
-	handle->cb = cb;
-	handle->arg= arg;
-	handle->timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-	assert(handle->timerfd > 0);
+	int fd = -1;
+	evdriver_t *evdriver = NULL;
+	evdriver = malloc(sizeof(*evdriver));
+	assert(evdriver);
+	evdriver->ctx = handle;
+	evdriver->cb = cb;
+	evdriver->arg= arg;
+	evdriver->timer.timeout = timeout;
+	evdriver->timer.period = period;
+	fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+	assert(fd > 0);
+	evdriver->fd = fd;
 	msec2tspec(timeout, &time.it_value);
 	msec2tspec(period, &time.it_interval);
 
-	timerfd_settime(handle->timerfd, 0, &time, NULL);
+	timerfd_settime(evdriver->fd, 0, &time, NULL);
 	
 	struct epoll_event ev;
 	ev.events   = EPOLLIN | EPOLLRDHUP;
-	ev.data.ptr = handle;
+	ev.data.ptr = evdriver;
 
-	ret = epoll_ctl(handle->loop, EPOLL_CTL_ADD, handle->timerfd, &ev);
+	ret = epoll_ctl(handle->loop, EPOLL_CTL_ADD, evdriver->fd, &ev);
 	assert(ret == 0);
-	return 0;
+	list_add_tail(&evdriver->list, &handle->list);
+	
+	return fd;
 }
 
-void evdriver_timer_del(evdriver_ctx_t *handle)
+void evdriver_timer_del(evdriver_ctx_t *handle,int fd)
 {
-	epoll_ctl(handle->loop, EPOLL_CTL_DEL, handle->timerfd, NULL);
-	close(handle->timerfd);
-	handle->timerfd = -1;
+	evdriver_t *ev,*tmp;
+	if(handle)
+	{
+		list_for_each_entry_safe(ev,tmp, &handle->list, list) {
+			if(fd == ev->fd)
+			{
+				list_del_init(&ev->list);
+				epoll_ctl(handle->loop, EPOLL_CTL_DEL, ev->fd, NULL);
+				close(ev->fd);
+				ev->fd = -1;
+				free(ev);
+				ev = NULL;
+				break;
+			}
+		}
+	}
 }
 
 
@@ -86,25 +108,43 @@ void evdriver_run(evdriver_ctx_t *handle)
 	struct epoll_event ee[MAX_EVENTS];
 	int i, nfds;
 	int ret;
+	evdriver_t *ev = NULL;
+	uint64_t exp;
 	
 	assert(handle);
-	while(1)
+	while(handle->running)
 	{
 		nfds = epoll_wait(handle->loop, ee, MAX_EVENTS, handle->timeout);
 		//printf("nfds=%d\n",nfds);
 		for (i = 0; i < nfds; i++) 
 		{
-			uint64_t exp;
-			ret = read(handle->timerfd, &exp, sizeof(exp));
+			ev = (evdriver_t *)ee[i].data.ptr;
+			ret = read(ev->fd, &exp, sizeof(exp));
 			assert(ret >= 0);
-			if(handle->cb) handle->cb(handle,handle->arg);
+			if(ev->cb) ev->cb(handle,ev->arg);
 		}
 	}
 }
 
 
 
-
+void evdriver_exit(evdriver_ctx_t *handle)
+{
+	evdriver_t *ev,*tmp;
+	if(handle)
+	{
+		list_for_each_entry_safe(ev,tmp, &handle->list, list) {
+			list_del_init(&ev->list);
+			epoll_ctl(handle->loop, EPOLL_CTL_DEL, ev->fd, NULL);
+			close(ev->fd);
+			ev->fd = -1;
+			free(ev);
+			ev = NULL;
+		}
+		free(handle);
+		handle = NULL;
+	}
+}
 
 
 

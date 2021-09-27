@@ -23,7 +23,7 @@ static void test_timeout(evdriver_ctx_t *handle,void *arg)
 	if(__cnt++ > 10)
 	{
 		printf("timer stop(%d)...\n",__cnt);
-		evdriver_timer_del(handle);
+		//evdriver_timer_del(handle);
 	}
 }
 
